@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -424,21 +424,51 @@
 <body>
 <div class="app" id="app"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script>
 const COLORS = ['#E3A008', '#2A8C82', '#E0603F', '#6A4C93', '#3A7D44', '#2E5EAA'];
 const STORAGE_KEY = 'homeroom-data';
 
+// --- Backend setup ---
+// Fill these in with your own Firebase project's config (see deployment steps).
+// Until you do, the app falls back to Claude's built-in storage for this preview.
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+const USE_FIREBASE = firebaseConfig.apiKey !== "YOUR_API_KEY";
+let db = null;
+if (USE_FIREBASE) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+}
+
 let state = { children: [], activeChildId: null };
-let modal = null; // { type: 'child' | 'subject', childId? }
+let modal = null; // { type: 'child' | 'subject' | 'deleteChild', childId? }
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
 async function load() {
-  try {
-    const res = await window.storage.get(STORAGE_KEY, false);
-    if (res && res.value) state = JSON.parse(res.value);
-  } catch (e) {
-    // no data yet
+  if (USE_FIREBASE) {
+    try {
+      const snap = await db.collection('homeroom').doc('data').get();
+      if (snap.exists && snap.data().state) state = JSON.parse(snap.data().state);
+    } catch (e) {
+      console.error('Firebase load error', e);
+    }
+  } else {
+    try {
+      const res = await window.storage.get(STORAGE_KEY, false);
+      if (res && res.value) state = JSON.parse(res.value);
+    } catch (e) {
+      // no data yet
+    }
   }
   if (!state.activeChildId && state.children.length) {
     state.activeChildId = state.children[0].id;
@@ -447,10 +477,18 @@ async function load() {
 }
 
 async function save() {
-  try {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
-  } catch (e) {
-    console.error('Storage error', e);
+  if (USE_FIREBASE) {
+    try {
+      await db.collection('homeroom').doc('data').set({ state: JSON.stringify(state) });
+    } catch (e) {
+      console.error('Firebase save error', e);
+    }
+  } else {
+    try {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+    } catch (e) {
+      console.error('Storage error', e);
+    }
   }
 }
 
@@ -538,11 +576,17 @@ function formatDate(d) {
 function confirmDeleteChild(id) {
   const child = state.children.find(c => c.id === id);
   if (!child) return;
-  if (!confirm(`Delete ${child.name} and all their subjects and practice log? This can't be undone.`)) return;
+  modal = { type: 'deleteChild', childId: id, name: child.name };
+  render();
+}
+
+function performDeleteChild() {
+  const id = modal.childId;
   state.children = state.children.filter(c => c.id !== id);
   if (state.activeChildId === id) {
     state.activeChildId = state.children.length ? state.children[0].id : null;
   }
+  modal = null;
   save(); render();
 }
 
@@ -726,6 +770,20 @@ function handleAddClick(subjectId) {
 }
 
 function renderModal() {
+  if (modal.type === 'deleteChild') {
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+        <div class="modal">
+          <h3>Delete ${escapeHtml(modal.name)}?</h3>
+          <p style="font-size:13.5px; color:var(--ink-soft); margin:-4px 0 16px;">This removes all their subjects, assignments, and practice log. This can't be undone.</p>
+          <div class="modal-actions">
+            <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+            <button class="btn-save" style="background:var(--coral)" onclick="performDeleteChild()">Delete</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
   const isChild = modal.type === 'child';
   return `
     <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
