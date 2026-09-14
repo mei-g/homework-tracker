@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homeroom — Homework Tracker</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+  :root {
+    --paper: #40E0D0;
+    --panel: #FFFFFF;
+    --ink: #22303F;
+    --ink-soft: #5B6B78;
+    --line: #DDE3DE;
+    --amber: #E3A008;
+    --teal: #2A8C82;
+    --coral: #E0603F;
+    --violet: #6A4C93;
+    --moss: #3A7D44;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, .display {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  .app {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 20px 16px 60px;
+  }
+
+  header.top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  header.top h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  header.top p {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  /* Child tabs, styled like folder tabs along a shelf */
+  .kids-row {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    margin-bottom: 18px;
+    scrollbar-width: none;
+  }
+  .kids-row::-webkit-scrollbar { display: none; }
+
+  .kid-tab {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    white-space: nowrap;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .kid-tab.active {
+    border-color: var(--kid-color, var(--ink));
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--kid-color, var(--ink));
+  }
+
+  .kid-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--kid-color, var(--ink-soft));
+    flex-shrink: 0;
+  }
+
+  .kid-ring-num {
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .add-kid-tab {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .overall {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+
+  .overall .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .overall .row h2 { font-size: 17px; margin: 0; }
+  .overall .row .pct { font-size: 17px; font-weight: 600; color: var(--kid-color, var(--ink)); }
+
+  .bar-track {
+    height: 8px;
+    background: var(--paper);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--kid-color, var(--ink));
+    border-radius: 5px;
+    transition: width 0.3s ease;
+  }
+
+  .subjects { display: flex; flex-direction: column; gap: 16px; }
+
+  .practice-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--ink);
+    border-radius: var(--radius);
+    padding: 16px 16px 12px;
+    margin-bottom: 16px;
+  }
+  .practice-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .practice-head h3 { font-size: 15px; margin: 0; }
+  .practice-total { font-size: 13px; color: var(--ink-soft); }
+  .practice-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-top: 1px solid var(--paper);
+    font-size: 14px;
+  }
+  .practice-entry:first-of-type { border-top: none; }
+  .practice-entry .inst { flex: 1; }
+  .practice-entry .mins { color: var(--ink-soft); font-size: 13px; white-space: nowrap; }
+  .practice-entry .pdate { color: var(--ink-soft); font-size: 12px; white-space: nowrap; }
+  .practice-add-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .practice-add-row input[type="text"] {
+    flex: 1 1 110px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 13.5px;
+    font-family: inherit;
+  }
+  .practice-add-row input[type="number"] {
+    flex: 0 0 80px;
+    padding: 8px 8px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .practice-add-row input[type="date"] {
+    flex: 0 0 130px;
+    padding: 8px 8px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--ink-soft);
+  }
+  .practice-add-row button {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    background: var(--ink);
+    color: white;
+    border: none;
+    border-radius: 7px;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .subject {
+    position: relative;
+    margin-top: 14px;
+  }
+
+  .subject-tab {
+    position: absolute;
+    top: -14px;
+    left: 14px;
+    padding: 4px 12px 3px;
+    background: var(--subj-color);
+    color: white;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: 6px 6px 0 0;
+  }
+
+  .subject-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--subj-color);
+    border-radius: var(--radius);
+    padding: 16px 16px 12px;
+  }
+
+  .subject-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .subject-head .frac {
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .assignment {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid var(--paper);
+  }
+  .assignment:first-of-type { border-top: none; }
+
+  .assignment input[type="checkbox"] {
+    margin-top: 3px;
+    width: 17px; height: 17px;
+    accent-color: var(--subj-color);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .assignment .title {
+    font-size: 14.5px;
+    line-height: 1.35;
+  }
+  .assignment.done .title {
+    text-decoration: line-through;
+    color: var(--ink-soft);
+  }
+  .assignment .due {
+    display: block;
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 1px;
+  }
+  .assignment .due.overdue { color: var(--coral); font-weight: 500; }
+
+  .assignment .del {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--ink-soft);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+
+  .add-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .add-row input[type="text"] {
+    flex: 1 1 140px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 13.5px;
+    font-family: inherit;
+  }
+  .add-row input[type="date"] {
+    flex: 0 0 130px;
+    padding: 8px 8px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--ink-soft);
+  }
+  .add-row button {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    background: var(--subj-color, var(--ink));
+    color: white;
+    border: none;
+    border-radius: 7px;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .add-subject-btn {
+    width: 100%;
+    padding: 12px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 14px;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+
+  .empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(34,48,63,0.35);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    z-index: 10;
+  }
+  .modal {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 20px;
+    width: 100%;
+    max-width: 340px;
+  }
+  .modal h3 { margin: 0 0 12px; font-size: 16px; }
+  .modal input[type="text"] {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: inherit;
+    margin-bottom: 10px;
+  }
+  .swatches { display: flex; gap: 8px; margin-bottom: 14px; }
+  .swatch {
+    width: 26px; height: 26px; border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+  }
+  .swatch.selected { border-color: var(--ink); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-actions button {
+    padding: 8px 14px;
+    border-radius: 7px;
+    font-size: 13.5px;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-cancel { background: var(--paper); color: var(--ink-soft); }
+  .btn-save { background: var(--ink); color: white; }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script>
+const COLORS = ['#E3A008', '#2A8C82', '#E0603F', '#6A4C93', '#3A7D44', '#2E5EAA'];
+const STORAGE_KEY = 'homeroom-data';
+
+let state = { children: [], activeChildId: null };
+let modal = null; // { type: 'child' | 'subject', childId? }
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+
+async function load() {
+  try {
+    const res = await window.storage.get(STORAGE_KEY, false);
+    if (res && res.value) state = JSON.parse(res.value);
+  } catch (e) {
+    // no data yet
+  }
+  if (!state.activeChildId && state.children.length) {
+    state.activeChildId = state.children[0].id;
+  }
+  render();
+}
+
+async function save() {
+  try {
+    await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+  } catch (e) {
+    console.error('Storage error', e);
+  }
+}
+
+function activeChild() {
+  return state.children.find(c => c.id === state.activeChildId) || null;
+}
+
+function subjectProgress(subject) {
+  const total = subject.assignments.length;
+  const done = subject.assignments.filter(a => a.done).length;
+  return { total, done, pct: total ? Math.round((done / total) * 100) : 0 };
+}
+
+function childProgress(child) {
+  let total = 0, done = 0;
+  child.subjects.forEach(s => {
+    total += s.assignments.length;
+    done += s.assignments.filter(a => a.done).length;
+  });
+  return { total, done, pct: total ? Math.round((done / total) * 100) : 0 };
+}
+
+function weekPracticeMinutes(child) {
+  const log = child.practiceLog || [];
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setHours(0,0,0,0);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  return log.reduce((sum, e) => {
+    if (!e.date) return sum;
+    const d = new Date(e.date + 'T00:00:00');
+    return d >= startOfWeek ? sum + e.minutes : sum;
+  }, 0);
+}
+
+function addPracticeEntry(instInput, minsInput, dateInput) {
+  const instrument = instInput.value.trim();
+  const minutes = parseInt(minsInput.value, 10);
+  if (!instrument || !minutes || minutes <= 0) return;
+  const child = activeChild();
+  if (!child.practiceLog) child.practiceLog = [];
+  child.practiceLog.push({ id: uid(), instrument, minutes, date: dateInput.value || new Date().toISOString().slice(0,10) });
+  instInput.value = ''; minsInput.value = ''; dateInput.value = '';
+  save(); render();
+}
+
+function deletePracticeEntry(entryId) {
+  const child = activeChild();
+  child.practiceLog = child.practiceLog.filter(e => e.id !== entryId);
+  save(); render();
+}
+
+function handleAddPracticeClick() {
+  const row = document.getElementById('practice-add-row');
+  const instInput = row.querySelector('input[type=text]');
+  const minsInput = row.querySelector('input[type=number]');
+  const dateInput = row.querySelector('input[type=date]');
+  addPracticeEntry(instInput, minsInput, dateInput);
+}
+
+function isOverdue(dueDate, done) {
+  if (!dueDate || done) return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  return new Date(dueDate) < today;
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ---- actions ----
+function selectChild(id) { state.activeChildId = id; render(); }
+
+function openAddChild() { modal = { type: 'child', name: '', color: COLORS[state.children.length % COLORS.length] }; render(); }
+function openAddSubject() { modal = { type: 'subject', name: '', color: COLORS[(activeChild()?.subjects.length || 0) % COLORS.length] }; render(); }
+function closeModal() { modal = null; render(); }
+
+function saveModal() {
+  if (!modal.name.trim()) return;
+  if (modal.type === 'child') {
+    const child = { id: uid(), name: modal.name.trim(), color: modal.color, subjects: [], practiceLog: [] };
+    state.children.push(child);
+    state.activeChildId = child.id;
+  } else if (modal.type === 'subject') {
+    const child = activeChild();
+    if (child) child.subjects.push({ id: uid(), name: modal.name.trim(), color: modal.color, assignments: [] });
+  }
+  modal = null;
+  save(); render();
+}
+
+function addAssignment(subjectId, titleInput, dateInput) {
+  const title = titleInput.value.trim();
+  if (!title) return;
+  const child = activeChild();
+  const subject = child.subjects.find(s => s.id === subjectId);
+  subject.assignments.push({ id: uid(), title, dueDate: dateInput.value || '', done: false });
+  titleInput.value = ''; dateInput.value = '';
+  save(); render();
+}
+
+function toggleAssignment(subjectId, assignmentId) {
+  const child = activeChild();
+  const subject = child.subjects.find(s => s.id === subjectId);
+  const a = subject.assignments.find(a => a.id === assignmentId);
+  a.done = !a.done;
+  save(); render();
+}
+
+function deleteAssignment(subjectId, assignmentId) {
+  const child = activeChild();
+  const subject = child.subjects.find(s => s.id === subjectId);
+  subject.assignments = subject.assignments.filter(a => a.id !== assignmentId);
+  save(); render();
+}
+
+// ---- render ----
+function render() {
+  const app = document.getElementById('app');
+  const child = activeChild();
+
+  let html = `
+    <header class="top">
+      <div>
+        <h1>Homeroom</h1>
+        <p>Track assignments, subject by subject.</p>
+      </div>
+    </header>
+
+    <div class="kids-row">
+      ${state.children.map(c => {
+        const p = childProgress(c);
+        return `<div class="kid-tab ${c.id === state.activeChildId ? 'active' : ''}" style="--kid-color:${c.color}" onclick="selectChild('${c.id}')">
+          <span class="kid-dot"></span>${escapeHtml(c.name)}
+          <span class="kid-ring-num">${p.done}/${p.total}</span>
+        </div>`;
+      }).join('')}
+      <button class="add-kid-tab" onclick="openAddChild()">+ Add child</button>
+    </div>
+  `;
+
+  if (!child) {
+    html += `<div class="empty">Add a child to start tracking homework.</div>`;
+  } else {
+    const cp = childProgress(child);
+    html += `
+      <div class="overall" style="--kid-color:${child.color}">
+        <div class="row"><h2>${escapeHtml(child.name)}'s overall progress</h2><span class="pct">${cp.pct}%</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${cp.pct}%"></div></div>
+      </div>
+
+      ${renderPractice(child)}
+
+      <div class="subjects">
+        ${child.subjects.map(s => renderSubject(s)).join('')}
+      </div>
+
+      <button class="add-subject-btn" onclick="openAddSubject()">+ Add subject</button>
+    `;
+  }
+
+  if (modal) html += renderModal();
+
+  app.innerHTML = html;
+
+  // wire up date min for new inputs not needed; wire enter key handlers
+  document.querySelectorAll('.add-row input[type=text]').forEach(inp => {
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        const btn = inp.closest('.add-row').querySelector('button');
+        btn.click();
+      }
+    });
+  });
+}
+
+function renderPractice(child) {
+  const log = [...(child.practiceLog || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const weekMins = weekPracticeMinutes(child);
+  const hrs = Math.floor(weekMins / 60), mins = weekMins % 60;
+  const weekLabel = hrs ? `${hrs}h ${mins}m this week` : `${mins}m this week`;
+
+  return `
+    <div class="practice-card">
+      <div class="practice-head">
+        <h3>Instrument practice</h3>
+        <span class="practice-total">${weekLabel}</span>
+      </div>
+      ${log.map(e => `
+        <div class="practice-entry">
+          <span class="inst">${escapeHtml(e.instrument)}</span>
+          <span class="mins">${e.minutes} min</span>
+          <span class="pdate">${formatDate(e.date)}</span>
+          <button class="del" onclick="deletePracticeEntry('${e.id}')">Remove</button>
+        </div>
+      `).join('') || '<div style="color:var(--ink-soft); font-size:13.5px; padding:6px 0;">No practice logged yet.</div>'}
+      <div class="practice-add-row" id="practice-add-row">
+        <input type="text" placeholder="Instrument">
+        <input type="number" placeholder="Min" min="1">
+        <input type="date">
+        <button onclick="handleAddPracticeClick()">Log</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSubject(subject) {
+  const p = subjectProgress(subject);
+  const sorted = [...subject.assignments].sort((a, b) => {
+    if (a.done !== b.done) return a.done ? 1 : -1;
+    return (a.dueDate || '9999').localeCompare(b.dueDate || '9999');
+  });
+
+  return `
+    <div class="subject" style="--subj-color:${subject.color}">
+      <div class="subject-tab">${escapeHtml(subject.name)}</div>
+      <div class="subject-card">
+        <div class="subject-head">
+          <div class="bar-track" style="flex:1; margin-right:12px;"><div class="bar-fill" style="width:${p.pct}%; background:${subject.color}"></div></div>
+          <span class="frac">${p.done}/${p.total}</span>
+        </div>
+        ${sorted.map(a => `
+          <div class="assignment ${a.done ? 'done' : ''}">
+            <input type="checkbox" ${a.done ? 'checked' : ''} onchange="toggleAssignment('${subject.id}','${a.id}')">
+            <div style="flex:1">
+              <span class="title">${escapeHtml(a.title)}</span>
+              ${a.dueDate ? `<span class="due ${isOverdue(a.dueDate, a.done) ? 'overdue' : ''}">${isOverdue(a.dueDate, a.done) ? 'Overdue · ' : 'Due '}${formatDate(a.dueDate)}</span>` : ''}
+            </div>
+            <button class="del" onclick="deleteAssignment('${subject.id}','${a.id}')">Remove</button>
+          </div>
+        `).join('') || '<div style="color:var(--ink-soft); font-size:13.5px; padding:6px 0;">No assignments yet.</div>'}
+        <div class="add-row" id="addrow-${subject.id}">
+          <input type="text" placeholder="New assignment">
+          <input type="date">
+          <button onclick="handleAddClick('${subject.id}')">Add</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function handleAddClick(subjectId) {
+  const row = document.getElementById('addrow-' + subjectId);
+  const titleInput = row.querySelector('input[type=text]');
+  const dateInput = row.querySelector('input[type=date]');
+  addAssignment(subjectId, titleInput, dateInput);
+}
+
+function renderModal() {
+  const isChild = modal.type === 'child';
+  return `
+    <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <h3>${isChild ? 'Add a child' : 'Add a subject'}</h3>
+        <input type="text" id="modal-name" placeholder="${isChild ? 'Name' : 'Subject name'}" value="${escapeHtml(modal.name)}" oninput="modal.name=this.value">
+        <div class="swatches">
+          ${COLORS.map(c => `<div class="swatch ${modal.color === c ? 'selected' : ''}" style="background:${c}" onclick="modal.color='${c}'; render(); document.getElementById('modal-name').focus();"></div>`).join('')}
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+          <button class="btn-save" onclick="saveModal()">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+load();
+</script>
+</body>
+</html>
