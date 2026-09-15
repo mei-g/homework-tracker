@@ -419,6 +419,69 @@
   }
   .btn-cancel { background: var(--paper); color: var(--ink-soft); }
   .btn-save { background: var(--ink); color: white; }
+
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  .role-badge {
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .role-badge.admin { background: var(--teal); color: white; }
+  .signout-btn {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 4px 10px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+
+  .auth-wrap {
+    max-width: 340px;
+    margin: 60px auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+  .auth-wrap h1 { font-size: 20px; margin: 0 0 4px; }
+  .auth-wrap p.sub { font-size: 13px; color: var(--ink-soft); margin: 0 0 18px; }
+  .auth-wrap input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: inherit;
+    margin-bottom: 10px;
+  }
+  .auth-wrap button.primary {
+    width: 100%;
+    padding: 10px;
+    background: var(--ink);
+    color: white;
+    border: none;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+  .auth-error { color: var(--coral); font-size: 12.5px; margin: -4px 0 10px; }
+  .auth-toggle { text-align: center; margin-top: 14px; font-size: 13px; color: var(--ink-soft); }
+  .auth-toggle a { color: var(--ink); cursor: pointer; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -426,53 +489,120 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script>
 const COLORS = ['#E3A008', '#2A8C82', '#E0603F', '#6A4C93', '#3A7D44', '#2E5EAA'];
 const STORAGE_KEY = 'homeroom-data';
 
 // --- Backend setup ---
 // Fill these in with your own Firebase project's config (see deployment steps).
-// Until you do, the app falls back to Claude's built-in storage for this preview.
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// Until you do, the app falls back to Claude's built-in storage for this preview,
+// and access control is skipped (you're treated as a single local admin).
 const firebaseConfig = {
-  apiKey: "AIzaSyCOY7Y-Ul3SmhO8BKLnik1k31KAq77rdWQ",
-  authDomain: "homework-tracker-58087.firebaseapp.com",
-  projectId: "homework-tracker-58087",
-  storageBucket: "homework-tracker-58087.firebasestorage.app",
-  messagingSenderId: "896517151831",
-  appId: "1:896517151831:web:21c67d998d5fe4cab91712",
-  measurementId: "G-1LL49KXYEQ"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
- 
+
 const USE_FIREBASE = firebaseConfig.apiKey !== "YOUR_API_KEY";
 let db = null;
-if (USE_FIREBASE) {
-  firebase.initializeApp(firebaseConfig);
-  db = firebase.firestore();
-}
+let auth = null;
 
 let state = { children: [], activeChildId: null };
 let modal = null; // { type: 'child' | 'subject' | 'deleteChild', childId? }
 
+// Auth/role state
+let currentUser = null;      // Firebase user object, or null
+let currentRole = null;      // 'admin' | 'guest' | null
+let authMode = 'signin';     // 'signin' | 'signup'
+let authError = '';
+let authBusy = false;
+
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
-async function load() {
+function canManageChild(child) {
+  if (!USE_FIREBASE) return true;
+  return currentRole === 'admin' || child.ownerId === (currentUser && currentUser.uid);
+}
+
+// Fetch (or create) this user's role doc. The first person ever to sign up
+// becomes admin automatically; everyone after that starts as a guest.
+// An admin can promote other users later from the Firestore console
+// (users/{uid}.role) if needed.
+async function ensureUserRole(user) {
+  const ref = db.collection('users').doc(user.uid);
+  const snap = await ref.get();
+  if (snap.exists) {
+    currentRole = snap.data().role || 'guest';
+    return;
+  }
+  const anyUsers = await db.collection('users').limit(1).get();
+  const role = anyUsers.empty ? 'admin' : 'guest';
+  await ref.set({ role, email: user.email || '' });
+  currentRole = role;
+}
+
+async function loadChildrenFirestore() {
+  let query = (currentRole === 'admin')
+    ? db.collection('children')
+    : db.collection('children').where('ownerId', '==', currentUser.uid);
+  const snap = await query.get();
+  state.children = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+  if (!state.activeChildId || !state.children.find(c => c.id === state.activeChildId)) {
+    state.activeChildId = state.children.length ? state.children[0].id : null;
+  }
+}
+
+// Persist a single child (create or update). Falls back to saving the
+// whole local blob when Firebase isn't configured.
+async function persistChild(child) {
   if (USE_FIREBASE) {
     try {
-      const snap = await db.collection('homeroom').doc('data').get();
-      if (snap.exists && snap.data().state) state = JSON.parse(snap.data().state);
+      await db.collection('children').doc(child.id).set({
+        ownerId: child.ownerId,
+        name: child.name,
+        color: child.color,
+        subjects: child.subjects,
+        practiceLog: child.practiceLog || []
+      });
     } catch (e) {
-      console.error('Firebase load error', e);
+      console.error('Save child error', e);
     }
   } else {
+    await saveLocal();
+  }
+}
+
+async function removeChildDoc(id) {
+  if (USE_FIREBASE) {
     try {
-      const res = await window.storage.get(STORAGE_KEY, false);
-      if (res && res.value) state = JSON.parse(res.value);
+      await db.collection('children').doc(id).delete();
     } catch (e) {
-      // no data yet
+      console.error('Delete child error', e);
     }
+  } else {
+    await saveLocal();
+  }
+}
+
+// Local (non-Firebase) fallback: whole-state save via Claude's storage.
+async function saveLocal() {
+  try {
+    await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+  } catch (e) {
+    console.error('Storage error', e);
+  }
+}
+
+async function loadLocal() {
+  try {
+    const res = await window.storage.get(STORAGE_KEY, false);
+    if (res && res.value) state = JSON.parse(res.value);
+  } catch (e) {
+    // no data yet
   }
   if (!state.activeChildId && state.children.length) {
     state.activeChildId = state.children[0].id;
@@ -480,20 +610,60 @@ async function load() {
   render();
 }
 
-async function save() {
-  if (USE_FIREBASE) {
-    try {
-      await db.collection('homeroom').doc('data').set({ state: JSON.stringify(state) });
-    } catch (e) {
-      console.error('Firebase save error', e);
+// --- Auth handlers ---
+async function handleAuthSubmit() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if (!email || !password) return;
+  authError = '';
+  authBusy = true;
+  render();
+  try {
+    if (authMode === 'signup') {
+      await auth.createUserWithEmailAndPassword(email, password);
+    } else {
+      await auth.signInWithEmailAndPassword(email, password);
     }
-  } else {
-    try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
-    } catch (e) {
-      console.error('Storage error', e);
-    }
+    // onAuthStateChanged will take it from here
+  } catch (e) {
+    authError = e.message.replace(/^Firebase:\s*/, '');
   }
+  authBusy = false;
+  render();
+}
+
+function toggleAuthMode() {
+  authMode = authMode === 'signin' ? 'signup' : 'signin';
+  authError = '';
+  render();
+}
+
+function signOutUser() {
+  auth.signOut();
+}
+
+// --- Boot ---
+if (USE_FIREBASE) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  auth = firebase.auth();
+  auth.onAuthStateChanged(async (user) => {
+    currentUser = user;
+    if (user) {
+      try {
+        await ensureUserRole(user);
+        await loadChildrenFirestore();
+      } catch (e) {
+        console.error('Auth/role error', e);
+      }
+    } else {
+      currentRole = null;
+      state = { children: [], activeChildId: null };
+    }
+    render();
+  });
+} else {
+  loadLocal();
 }
 
 function activeChild() {
@@ -540,20 +710,20 @@ function addPracticeEntry(instInput, minsInput, dateInput) {
   if (!child.practiceLog) child.practiceLog = [];
   child.practiceLog.push({ id: uid(), instrument, minutes, date: dateInput.value || new Date().toISOString().slice(0,10), done: false });
   instInput.value = ''; minsInput.value = ''; dateInput.value = '';
-  save(); render();
+  persistChild(child); render();
 }
 
 function togglePracticeEntry(entryId) {
   const child = activeChild();
   const e = child.practiceLog.find(e => e.id === entryId);
   e.done = !e.done;
-  save(); render();
+  persistChild(child); render();
 }
 
 function deletePracticeEntry(entryId) {
   const child = activeChild();
   child.practiceLog = child.practiceLog.filter(e => e.id !== entryId);
-  save(); render();
+  persistChild(child); render();
 }
 
 function handleAddPracticeClick() {
@@ -591,7 +761,7 @@ function performDeleteChild() {
     state.activeChildId = state.children.length ? state.children[0].id : null;
   }
   modal = null;
-  save(); render();
+  removeChildDoc(id); render();
 }
 
 function selectChild(id) { state.activeChildId = id; render(); }
@@ -603,15 +773,30 @@ function closeModal() { modal = null; render(); }
 function saveModal() {
   if (!modal.name.trim()) return;
   if (modal.type === 'child') {
-    const child = { id: uid(), name: modal.name.trim(), color: modal.color, subjects: [], practiceLog: [] };
+    const child = {
+      id: uid(),
+      name: modal.name.trim(),
+      color: modal.color,
+      subjects: [],
+      practiceLog: [],
+      ownerId: USE_FIREBASE ? currentUser.uid : 'local'
+    };
     state.children.push(child);
     state.activeChildId = child.id;
+    modal = null;
+    persistChild(child); render();
+    return;
   } else if (modal.type === 'subject') {
     const child = activeChild();
-    if (child) child.subjects.push({ id: uid(), name: modal.name.trim(), color: modal.color, assignments: [] });
+    if (child) {
+      child.subjects.push({ id: uid(), name: modal.name.trim(), color: modal.color, assignments: [] });
+      modal = null;
+      persistChild(child); render();
+      return;
+    }
   }
   modal = null;
-  save(); render();
+  render();
 }
 
 function addAssignment(subjectId, titleInput, dateInput) {
@@ -621,7 +806,7 @@ function addAssignment(subjectId, titleInput, dateInput) {
   const subject = child.subjects.find(s => s.id === subjectId);
   subject.assignments.push({ id: uid(), title, dueDate: dateInput.value || '', done: false });
   titleInput.value = ''; dateInput.value = '';
-  save(); render();
+  persistChild(child); render();
 }
 
 function toggleAssignment(subjectId, assignmentId) {
@@ -629,36 +814,53 @@ function toggleAssignment(subjectId, assignmentId) {
   const subject = child.subjects.find(s => s.id === subjectId);
   const a = subject.assignments.find(a => a.id === assignmentId);
   a.done = !a.done;
-  save(); render();
+  persistChild(child); render();
 }
 
 function deleteAssignment(subjectId, assignmentId) {
   const child = activeChild();
   const subject = child.subjects.find(s => s.id === subjectId);
   subject.assignments = subject.assignments.filter(a => a.id !== assignmentId);
-  save(); render();
+  persistChild(child); render();
 }
 
 // ---- render ----
 function render() {
   const app = document.getElementById('app');
+
+  if (USE_FIREBASE && !currentUser) {
+    app.innerHTML = renderAuthScreen();
+    return;
+  }
+
   const child = activeChild();
+
+  const accountHtml = USE_FIREBASE ? `
+    <div class="header-meta">
+      <span class="role-badge ${currentRole === 'admin' ? 'admin' : ''}">${currentRole}</span>
+      <button class="signout-btn" onclick="signOutUser()">Sign out</button>
+    </div>
+  ` : '';
 
   let html = `
     <header class="top">
       <div>
         <h1>Homeroom</h1>
-        <p>Track assignments, subject by subject.</p>
+        <p>${currentRole === 'admin' ? 'Track assignments across every child.' : 'Track assignments, subject by subject.'}</p>
       </div>
+      ${accountHtml}
     </header>
 
     <div class="kids-row">
       ${state.children.map(c => {
         const p = childProgress(c);
+        const delBtn = canManageChild(c)
+          ? `<button class="kid-del" title="Delete ${escapeHtml(c.name)}" onclick="event.stopPropagation(); confirmDeleteChild('${c.id}')">×</button>`
+          : '';
         return `<div class="kid-tab ${c.id === state.activeChildId ? 'active' : ''}" style="--kid-color:${c.color}" onclick="selectChild('${c.id}')">
           <span class="kid-dot"></span>${escapeHtml(c.name)}
           <span class="kid-ring-num">${p.done}/${p.total}</span>
-          <button class="kid-del" title="Delete ${escapeHtml(c.name)}" onclick="event.stopPropagation(); confirmDeleteChild('${c.id}')">×</button>
+          ${delBtn}
         </div>`;
       }).join('')}
       <button class="add-kid-tab" onclick="openAddChild()">+ Add child</button>
@@ -698,6 +900,24 @@ function render() {
       }
     });
   });
+}
+
+function renderAuthScreen() {
+  const isSignup = authMode === 'signup';
+  return `
+    <div class="auth-wrap">
+      <h1>Homeroom</h1>
+      <p class="sub">${isSignup ? 'Create an account to start tracking.' : 'Sign in to see your homework tracker.'}</p>
+      ${authError ? `<div class="auth-error">${escapeHtml(authError)}</div>` : ''}
+      <input type="email" id="auth-email" placeholder="Email" autocomplete="email">
+      <input type="password" id="auth-password" placeholder="Password" autocomplete="${isSignup ? 'new-password' : 'current-password'}" onkeydown="if(event.key==='Enter') handleAuthSubmit()">
+      <button class="primary" onclick="handleAuthSubmit()" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Please wait…' : (isSignup ? 'Create account' : 'Sign in')}</button>
+      <div class="auth-toggle">
+        ${isSignup ? 'Already have an account?' : "Don't have an account?"}
+        <a onclick="toggleAuthMode()">${isSignup ? 'Sign in' : 'Sign up'}</a>
+      </div>
+    </div>
+  `;
 }
 
 function renderPractice(child) {
@@ -812,7 +1032,6 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-load();
 </script>
 </body>
 </html>
