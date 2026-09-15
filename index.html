@@ -185,6 +185,24 @@
     margin-bottom: 4px;
     border-bottom: 1px solid var(--paper);
   }
+  .practice-week-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .practice-week-title {
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+  .week-start-input {
+    padding: 4px 7px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--ink-soft);
+  }
   .practice-goal-label { font-size: 12.5px; color: var(--ink-soft); }
   .edit-goal-btn {
     background: none;
@@ -229,6 +247,21 @@
   .practice-entry .inst { flex: 1; }
   .practice-entry .mins { color: var(--ink-soft); font-size: 13px; white-space: nowrap; }
   .practice-entry .pdate { color: var(--ink-soft); font-size: 12px; white-space: nowrap; }
+  .practice-entry .entry-date {
+    color: var(--ink-soft);
+    font-size: 11.5px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 2px 4px;
+    font-family: inherit;
+    background: transparent;
+  }
+  .practice-entry .entry-date:hover,
+  .practice-entry .entry-date:focus {
+    border-color: var(--line);
+    background: var(--panel);
+  }
   .practice-add-row {
     display: flex;
     gap: 6px;
@@ -564,12 +597,31 @@ function isAdminOrLocal() {
   return !USE_FIREBASE || currentRole === 'admin';
 }
 
-// Returns a stable key identifying the current week (the Sunday that starts it).
-function weekKey(date = new Date()) {
-  const d = new Date(date);
+// Returns the Date (midnight) that this child's current week starts on.
+// The weekday used as "start of week" comes from child.weekStart (an anchor
+// date an admin can pick); defaults to Sunday if never set.
+function getWeekStartDate(child, refDate = new Date()) {
+  const anchorWeekday = child.weekStart ? new Date(child.weekStart + 'T00:00:00').getDay() : 0;
+  const d = new Date(refDate);
   d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - d.getDay());
-  return d.toISOString().slice(0, 10);
+  let diff = d.getDay() - anchorWeekday;
+  if (diff < 0) diff += 7;
+  d.setDate(d.getDate() - diff);
+  return d;
+}
+
+// Stable key identifying a child's current week (the date it starts on).
+function weekKeyFor(child, refDate = new Date()) {
+  return getWeekStartDate(child, refDate).toISOString().slice(0, 10);
+}
+
+// ISO-8601 week number, for the "Week N" label.
+function isoWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
 }
 
 // Makes sure this child has enough auto-generated practice items for the
@@ -578,7 +630,7 @@ function weekKey(date = new Date()) {
 function ensureWeeklyDefaults(child) {
   if (!child.practiceGoal) child.practiceGoal = { minutes: 30, timesPerWeek: 1 };
   if (!child.practiceLog) child.practiceLog = [];
-  const wk = weekKey();
+  const wk = weekKeyFor(child);
   const existing = child.practiceLog.filter(e => e.auto && e.weekKey === wk).length;
   const need = child.practiceGoal.timesPerWeek - existing;
   let changed = false;
@@ -597,11 +649,11 @@ function ensureWeeklyDefaults(child) {
   return changed;
 }
 
-// Called right after an admin edits the goal: drops this week's not-yet-done
-// auto items and rebuilds them to match the new duration/frequency, leaving
-// already-completed sessions untouched.
+// Called right after an admin edits the goal (or moves the week-start
+// anchor): drops this week's not-yet-done auto items and rebuilds them to
+// match, leaving already-completed sessions untouched.
 function regenerateWeeklyDefaults(child) {
-  const wk = weekKey();
+  const wk = weekKeyFor(child);
   child.practiceLog = child.practiceLog.filter(e => !(e.auto && e.weekKey === wk && !e.done));
   const doneCount = child.practiceLog.filter(e => e.auto && e.weekKey === wk && e.done).length;
   const need = Math.max(0, child.practiceGoal.timesPerWeek - doneCount);
@@ -792,10 +844,7 @@ function childProgress(child) {
 
 function weekPracticeMinutes(child) {
   const log = child.practiceLog || [];
-  const now = new Date();
-  const startOfWeek = new Date(now);
-  startOfWeek.setHours(0,0,0,0);
-  startOfWeek.setDate(now.getDate() - now.getDay());
+  const startOfWeek = getWeekStartDate(child);
   return log.reduce((sum, e) => {
     if (!e.date || !e.done) return sum;
     const d = new Date(e.date + 'T00:00:00');
@@ -919,6 +968,27 @@ function saveGoalModal() {
   child.practiceGoal = { minutes, timesPerWeek };
   regenerateWeeklyDefaults(child);
   modal = null;
+  persistChild(child); render();
+}
+
+// Admin picks which date the week should be considered to start on; that
+// date's weekday becomes the recurring anchor (e.g. picking a Monday makes
+// every week start on Monday from then on).
+function updateWeekStart(childId, value) {
+  if (!isAdminOrLocal() || !value) return;
+  const child = state.children.find(c => c.id === childId);
+  if (!child) return;
+  child.weekStart = value;
+  regenerateWeeklyDefaults(child);
+  persistChild(child); render();
+}
+
+function updateEntryDate(entryId, value) {
+  if (!value) return;
+  const child = activeChild();
+  const e = child.practiceLog.find(e => e.id === entryId);
+  if (!e) return;
+  e.date = value;
   persistChild(child); render();
 }
 
@@ -1052,11 +1122,22 @@ function renderPractice(child) {
   const goalLabel = `Goal: ${goal.timesPerWeek}× ${goal.minutes} min / week`;
   const editBtn = isAdminOrLocal() ? `<button class="edit-goal-btn" onclick="openEditGoal('${child.id}')">Edit goal</button>` : '';
 
+  const weekStartDate = getWeekStartDate(child);
+  const weekStartKey = weekStartDate.toISOString().slice(0, 10);
+  const weekNum = isoWeekNumber(weekStartDate);
+  const weekPicker = isAdminOrLocal()
+    ? `<input type="date" class="week-start-input" value="${weekStartKey}" onchange="updateWeekStart('${child.id}', this.value)">`
+    : `<span class="practice-goal-label">Starts ${formatDate(weekStartKey)}</span>`;
+
   return `
     <div class="practice-card">
       <div class="practice-head">
         <h3>Instrument practice</h3>
         <span class="practice-total">${weekLabel}</span>
+      </div>
+      <div class="practice-week-row">
+        <span class="practice-week-title">Week ${weekNum}</span>
+        ${weekPicker}
       </div>
       <div class="practice-goal-row">
         <span class="practice-goal-label">${goalLabel}</span>
@@ -1067,7 +1148,7 @@ function renderPractice(child) {
           <input type="checkbox" ${e.done ? 'checked' : ''} onchange="togglePracticeEntry('${e.id}')">
           <span class="inst">${escapeHtml(e.instrument)}${e.auto ? '<span class="auto-tag">Weekly goal</span>' : ''}</span>
           <span class="mins">${e.minutes} min</span>
-          <span class="pdate">${formatDate(e.date)}</span>
+          <input type="date" class="entry-date" value="${e.date || ''}" onchange="updateEntryDate('${e.id}', this.value)">
           <button class="del" onclick="deletePracticeEntry('${e.id}')">Remove</button>
         </div>
       `).join('') || '<div style="color:var(--ink-soft); font-size:13.5px; padding:6px 0;">No practice logged yet.</div>'}
