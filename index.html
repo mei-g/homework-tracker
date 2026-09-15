@@ -177,6 +177,36 @@
   }
   .practice-head h3 { font-size: 15px; margin: 0; }
   .practice-total { font-size: 13px; color: var(--ink-soft); }
+  .practice-goal-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 10px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--paper);
+  }
+  .practice-goal-label { font-size: 12.5px; color: var(--ink-soft); }
+  .edit-goal-btn {
+    background: none;
+    border: none;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+  }
+  .auto-tag {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: var(--ink-soft);
+    background: var(--paper);
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 6px;
+  }
   .practice-entry {
     display: flex;
     align-items: center;
@@ -529,6 +559,65 @@ function canManageChild(child) {
   return currentRole === 'admin' || child.ownerId === (currentUser && currentUser.uid);
 }
 
+// Only an admin (or the local single-user fallback) can change practice goals.
+function isAdminOrLocal() {
+  return !USE_FIREBASE || currentRole === 'admin';
+}
+
+// Returns a stable key identifying the current week (the Sunday that starts it).
+function weekKey(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d.toISOString().slice(0, 10);
+}
+
+// Makes sure this child has enough auto-generated practice items for the
+// current week, based on their practice goal. Returns true if it added any
+// (so the caller knows whether to persist the change).
+function ensureWeeklyDefaults(child) {
+  if (!child.practiceGoal) child.practiceGoal = { minutes: 30, timesPerWeek: 1 };
+  if (!child.practiceLog) child.practiceLog = [];
+  const wk = weekKey();
+  const existing = child.practiceLog.filter(e => e.auto && e.weekKey === wk).length;
+  const need = child.practiceGoal.timesPerWeek - existing;
+  let changed = false;
+  for (let i = 0; i < need; i++) {
+    child.practiceLog.push({
+      id: uid(),
+      instrument: 'Practice',
+      minutes: child.practiceGoal.minutes,
+      date: wk,
+      done: false,
+      auto: true,
+      weekKey: wk
+    });
+    changed = true;
+  }
+  return changed;
+}
+
+// Called right after an admin edits the goal: drops this week's not-yet-done
+// auto items and rebuilds them to match the new duration/frequency, leaving
+// already-completed sessions untouched.
+function regenerateWeeklyDefaults(child) {
+  const wk = weekKey();
+  child.practiceLog = child.practiceLog.filter(e => !(e.auto && e.weekKey === wk && !e.done));
+  const doneCount = child.practiceLog.filter(e => e.auto && e.weekKey === wk && e.done).length;
+  const need = Math.max(0, child.practiceGoal.timesPerWeek - doneCount);
+  for (let i = 0; i < need; i++) {
+    child.practiceLog.push({
+      id: uid(),
+      instrument: 'Practice',
+      minutes: child.practiceGoal.minutes,
+      date: wk,
+      done: false,
+      auto: true,
+      weekKey: wk
+    });
+  }
+}
+
 // Fetch (or create) this user's role doc. The first person ever to sign up
 // becomes admin automatically; everyone after that starts as a guest.
 // An admin can promote other users later from the Firestore console
@@ -552,6 +641,11 @@ async function loadChildrenFirestore() {
     : db.collection('children').where('ownerId', '==', currentUser.uid);
   const snap = await query.get();
   state.children = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+  for (const child of state.children) {
+    if (ensureWeeklyDefaults(child)) {
+      await persistChild(child);
+    }
+  }
   if (!state.activeChildId || !state.children.find(c => c.id === state.activeChildId)) {
     state.activeChildId = state.children.length ? state.children[0].id : null;
   }
@@ -567,7 +661,8 @@ async function persistChild(child) {
         name: child.name,
         color: child.color,
         subjects: child.subjects,
-        practiceLog: child.practiceLog || []
+        practiceLog: child.practiceLog || [],
+        practiceGoal: child.practiceGoal || { minutes: 30, timesPerWeek: 1 }
       });
     } catch (e) {
       console.error('Save child error', e);
@@ -605,6 +700,11 @@ async function loadLocal() {
   } catch (e) {
     // no data yet
   }
+  let anyChanged = false;
+  state.children.forEach(child => {
+    if (ensureWeeklyDefaults(child)) anyChanged = true;
+  });
+  if (anyChanged) await saveLocal();
   if (!state.activeChildId && state.children.length) {
     state.activeChildId = state.children[0].id;
   }
@@ -780,8 +880,10 @@ function saveModal() {
       color: modal.color,
       subjects: [],
       practiceLog: [],
+      practiceGoal: { minutes: 30, timesPerWeek: 1 },
       ownerId: USE_FIREBASE ? currentUser.uid : 'local'
     };
+    ensureWeeklyDefaults(child);
     state.children.push(child);
     state.activeChildId = child.id;
     modal = null;
@@ -798,6 +900,26 @@ function saveModal() {
   }
   modal = null;
   render();
+}
+
+function openEditGoal(childId) {
+  if (!isAdminOrLocal()) return;
+  const child = state.children.find(c => c.id === childId);
+  if (!child) return;
+  if (!child.practiceGoal) child.practiceGoal = { minutes: 30, timesPerWeek: 1 };
+  modal = { type: 'practiceGoal', childId, minutes: child.practiceGoal.minutes, timesPerWeek: child.practiceGoal.timesPerWeek };
+  render();
+}
+
+function saveGoalModal() {
+  const child = state.children.find(c => c.id === modal.childId);
+  const minutes = parseInt(modal.minutes, 10);
+  const timesPerWeek = parseInt(modal.timesPerWeek, 10);
+  if (!child || !minutes || minutes <= 0 || !timesPerWeek || timesPerWeek <= 0) return;
+  child.practiceGoal = { minutes, timesPerWeek };
+  regenerateWeeklyDefaults(child);
+  modal = null;
+  persistChild(child); render();
 }
 
 function addAssignment(subjectId, titleInput, dateInput) {
@@ -926,6 +1048,9 @@ function renderPractice(child) {
   const weekMins = weekPracticeMinutes(child);
   const hrs = Math.floor(weekMins / 60), mins = weekMins % 60;
   const weekLabel = hrs ? `${hrs}h ${mins}m this week` : `${mins}m this week`;
+  const goal = child.practiceGoal || { minutes: 30, timesPerWeek: 1 };
+  const goalLabel = `Goal: ${goal.timesPerWeek}× ${goal.minutes} min / week`;
+  const editBtn = isAdminOrLocal() ? `<button class="edit-goal-btn" onclick="openEditGoal('${child.id}')">Edit goal</button>` : '';
 
   return `
     <div class="practice-card">
@@ -933,10 +1058,14 @@ function renderPractice(child) {
         <h3>Instrument practice</h3>
         <span class="practice-total">${weekLabel}</span>
       </div>
+      <div class="practice-goal-row">
+        <span class="practice-goal-label">${goalLabel}</span>
+        ${editBtn}
+      </div>
       ${log.map(e => `
         <div class="practice-entry ${e.done ? 'done' : ''}">
           <input type="checkbox" ${e.done ? 'checked' : ''} onchange="togglePracticeEntry('${e.id}')">
-          <span class="inst">${escapeHtml(e.instrument)}</span>
+          <span class="inst">${escapeHtml(e.instrument)}${e.auto ? '<span class="auto-tag">Weekly goal</span>' : ''}</span>
           <span class="mins">${e.minutes} min</span>
           <span class="pdate">${formatDate(e.date)}</span>
           <button class="del" onclick="deletePracticeEntry('${e.id}')">Remove</button>
@@ -1004,6 +1133,30 @@ function renderModal() {
           <div class="modal-actions">
             <button class="btn-cancel" onclick="closeModal()">Cancel</button>
             <button class="btn-save" style="background:var(--coral)" onclick="performDeleteChild()">Delete</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  if (modal.type === 'practiceGoal') {
+    return `
+      <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+        <div class="modal">
+          <h3>Weekly practice goal</h3>
+          <div style="display:flex; gap:8px; margin-bottom:6px;">
+            <div style="flex:1;">
+              <label style="font-size:12px; color:var(--ink-soft); display:block; margin-bottom:4px;">Minutes per session</label>
+              <input type="number" min="1" value="${modal.minutes}" oninput="modal.minutes=this.value" style="width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:7px; font-size:14px; font-family:inherit;">
+            </div>
+            <div style="flex:1;">
+              <label style="font-size:12px; color:var(--ink-soft); display:block; margin-bottom:4px;">Times per week</label>
+              <input type="number" min="1" value="${modal.timesPerWeek}" oninput="modal.timesPerWeek=this.value" style="width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:7px; font-size:14px; font-family:inherit;">
+            </div>
+          </div>
+          <p style="font-size:12px; color:var(--ink-soft); margin:6px 0 14px;">Updates this week's remaining practice items to match. Already-completed sessions stay as they are.</p>
+          <div class="modal-actions">
+            <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+            <button class="btn-save" onclick="saveGoalModal()">Save</button>
           </div>
         </div>
       </div>
