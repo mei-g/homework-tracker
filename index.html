@@ -246,6 +246,17 @@
   .practice-entry:first-of-type { border-top: none; }
   .practice-entry .inst { flex: 1; }
   .practice-entry .mins { color: var(--ink-soft); font-size: 13px; white-space: nowrap; }
+  .practice-entry .actual-input {
+    width: 56px;
+    padding: 3px 5px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--ink);
+    text-align: center;
+  }
+  .practice-entry .actual-input::placeholder { color: var(--ink-soft); }
   .practice-entry .pdate { color: var(--ink-soft); font-size: 12px; white-space: nowrap; }
   .practice-entry .entry-date {
     color: var(--ink-soft);
@@ -587,12 +598,21 @@ let authBusy = false;
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
-function canManageChild(child) {
-  if (!USE_FIREBASE) return true;
-  return currentRole === 'admin' || child.ownerId === (currentUser && currentUser.uid);
-}
+// Structural changes (add/delete a child or subject, delete a logged item,
+// edit a logged item's date, edit the weekly goal or week-start) are
+// admin-only. Guests can only tick things off and log new items — enforced
+// both here in the UI and, best-effort, in Firestore rules.
 
 // Only an admin (or the local single-user fallback) can change practice goals.
+// Admin can manage any child; a guest can fully manage children they added
+// themselves (add/delete the child, its subjects, assignments, practice
+// items, dates, and goal) but not anyone else's.
+function canManageChild(child) {
+  if (!USE_FIREBASE) return true;
+  if (currentRole === 'admin') return true;
+  return !!child && child.ownerId === (currentUser && currentUser.uid);
+}
+
 function isAdminOrLocal() {
   return !USE_FIREBASE || currentRole === 'admin';
 }
@@ -639,6 +659,7 @@ function ensureWeeklyDefaults(child) {
       id: uid(),
       instrument: 'Practice',
       minutes: child.practiceGoal.minutes,
+      actualMinutes: null,
       date: wk,
       done: false,
       auto: true,
@@ -662,6 +683,7 @@ function regenerateWeeklyDefaults(child) {
       id: uid(),
       instrument: 'Practice',
       minutes: child.practiceGoal.minutes,
+      actualMinutes: null,
       date: wk,
       done: false,
       auto: true,
@@ -688,7 +710,7 @@ async function ensureUserRole(user) {
 }
 
 async function loadChildrenFirestore() {
-  let query = (currentRole === 'admin')
+  const query = (currentRole === 'admin')
     ? db.collection('children')
     : db.collection('children').where('ownerId', '==', currentUser.uid);
   const snap = await query.get();
@@ -848,7 +870,9 @@ function weekPracticeMinutes(child) {
   return log.reduce((sum, e) => {
     if (!e.date || !e.done) return sum;
     const d = new Date(e.date + 'T00:00:00');
-    return d >= startOfWeek ? sum + e.minutes : sum;
+    if (d < startOfWeek) return sum;
+    const amount = (e.actualMinutes !== null && e.actualMinutes !== undefined && e.actualMinutes !== '') ? Number(e.actualMinutes) : e.minutes;
+    return sum + amount;
   }, 0);
 }
 
@@ -858,7 +882,7 @@ function addPracticeEntry(instInput, minsInput, dateInput) {
   if (!instrument || !minutes || minutes <= 0) return;
   const child = activeChild();
   if (!child.practiceLog) child.practiceLog = [];
-  child.practiceLog.push({ id: uid(), instrument, minutes, date: dateInput.value || new Date().toISOString().slice(0,10), done: false });
+  child.practiceLog.push({ id: uid(), instrument, minutes, actualMinutes: minutes, date: dateInput.value || new Date().toISOString().slice(0,10), done: false });
   instInput.value = ''; minsInput.value = ''; dateInput.value = '';
   persistChild(child); render();
 }
@@ -870,8 +894,24 @@ function togglePracticeEntry(entryId) {
   persistChild(child); render();
 }
 
+function updateActualMinutes(entryId, value) {
+  const child = activeChild();
+  if (!child) return;
+  const e = child.practiceLog.find(e => e.id === entryId);
+  if (!e) return;
+  if (value === '' || value === null) {
+    e.actualMinutes = null;
+  } else {
+    const n = parseInt(value, 10);
+    if (isNaN(n) || n < 0) return;
+    e.actualMinutes = n;
+  }
+  persistChild(child); render();
+}
+
 function deletePracticeEntry(entryId) {
   const child = activeChild();
+  if (!child || !canManageChild(child)) return;
   child.practiceLog = child.practiceLog.filter(e => e.id !== entryId);
   persistChild(child); render();
 }
@@ -899,7 +939,7 @@ function formatDate(d) {
 // ---- actions ----
 function confirmDeleteChild(id) {
   const child = state.children.find(c => c.id === id);
-  if (!child) return;
+  if (!child || !canManageChild(child)) return;
   modal = { type: 'deleteChild', childId: id, name: child.name };
   render();
 }
@@ -917,11 +957,12 @@ function performDeleteChild() {
 function selectChild(id) { state.activeChildId = id; render(); }
 
 function openAddChild() { modal = { type: 'child', name: '', color: COLORS[state.children.length % COLORS.length] }; render(); }
-function openAddSubject() { modal = { type: 'subject', name: '', color: COLORS[(activeChild()?.subjects.length || 0) % COLORS.length] }; render(); }
+function openAddSubject() { if (!canManageChild(activeChild())) return; modal = { type: 'subject', name: '', color: COLORS[(activeChild()?.subjects.length || 0) % COLORS.length] }; render(); }
 function closeModal() { modal = null; render(); }
 
 function saveModal() {
   if (!modal.name.trim()) return;
+  if (modal.type === 'subject' && !canManageChild(activeChild())) { modal = null; render(); return; }
   if (modal.type === 'child') {
     const child = {
       id: uid(),
@@ -952,9 +993,8 @@ function saveModal() {
 }
 
 function openEditGoal(childId) {
-  if (!isAdminOrLocal()) return;
   const child = state.children.find(c => c.id === childId);
-  if (!child) return;
+  if (!child || !canManageChild(child)) return;
   if (!child.practiceGoal) child.practiceGoal = { minutes: 30, timesPerWeek: 1 };
   modal = { type: 'practiceGoal', childId, minutes: child.practiceGoal.minutes, timesPerWeek: child.practiceGoal.timesPerWeek };
   render();
@@ -964,7 +1004,7 @@ function saveGoalModal() {
   const child = state.children.find(c => c.id === modal.childId);
   const minutes = parseInt(modal.minutes, 10);
   const timesPerWeek = parseInt(modal.timesPerWeek, 10);
-  if (!child || !minutes || minutes <= 0 || !timesPerWeek || timesPerWeek <= 0) return;
+  if (!child || !canManageChild(child) || !minutes || minutes <= 0 || !timesPerWeek || timesPerWeek <= 0) return;
   child.practiceGoal = { minutes, timesPerWeek };
   regenerateWeeklyDefaults(child);
   modal = null;
@@ -975,17 +1015,16 @@ function saveGoalModal() {
 // date's weekday becomes the recurring anchor (e.g. picking a Monday makes
 // every week start on Monday from then on).
 function updateWeekStart(childId, value) {
-  if (!isAdminOrLocal() || !value) return;
   const child = state.children.find(c => c.id === childId);
-  if (!child) return;
+  if (!child || !canManageChild(child) || !value) return;
   child.weekStart = value;
   regenerateWeeklyDefaults(child);
   persistChild(child); render();
 }
 
 function updateEntryDate(entryId, value) {
-  if (!value) return;
   const child = activeChild();
+  if (!child || !canManageChild(child) || !value) return;
   const e = child.practiceLog.find(e => e.id === entryId);
   if (!e) return;
   e.date = value;
@@ -1012,6 +1051,7 @@ function toggleAssignment(subjectId, assignmentId) {
 
 function deleteAssignment(subjectId, assignmentId) {
   const child = activeChild();
+  if (!child || !canManageChild(child)) return;
   const subject = child.subjects.find(s => s.id === subjectId);
   subject.assignments = subject.assignments.filter(a => a.id !== assignmentId);
   persistChild(child); render();
@@ -1039,7 +1079,7 @@ function render() {
     <header class="top">
       <div>
         <h1>Homeroom</h1>
-        <p>${currentRole === 'admin' ? 'Track assignments across every child.' : 'Track assignments, subject by subject.'}</p>
+        <p>${currentRole === 'admin' ? 'Track assignments across every child.' : 'Track assignments for the children you\'ve added.'}</p>
       </div>
       ${accountHtml}
     </header>
@@ -1076,7 +1116,7 @@ function render() {
         ${child.subjects.map(s => renderSubject(s)).join('')}
       </div>
 
-      <button class="add-subject-btn" onclick="openAddSubject()">+ Add subject</button>
+      ${canManageChild(child) ? `<button class="add-subject-btn" onclick="openAddSubject()">+ Add subject</button>` : ''}
     `;
   }
 
@@ -1120,12 +1160,13 @@ function renderPractice(child) {
   const weekLabel = hrs ? `${hrs}h ${mins}m this week` : `${mins}m this week`;
   const goal = child.practiceGoal || { minutes: 30, timesPerWeek: 1 };
   const goalLabel = `Goal: ${goal.timesPerWeek}× ${goal.minutes} min / week`;
-  const editBtn = isAdminOrLocal() ? `<button class="edit-goal-btn" onclick="openEditGoal('${child.id}')">Edit goal</button>` : '';
+  const canEdit = canManageChild(child);
+  const editBtn = canEdit ? `<button class="edit-goal-btn" onclick="openEditGoal('${child.id}')">Edit goal</button>` : '';
 
   const weekStartDate = getWeekStartDate(child);
   const weekStartKey = weekStartDate.toISOString().slice(0, 10);
   const weekNum = isoWeekNumber(weekStartDate);
-  const weekPicker = isAdminOrLocal()
+  const weekPicker = canEdit
     ? `<input type="date" class="week-start-input" value="${weekStartKey}" onchange="updateWeekStart('${child.id}', this.value)">`
     : `<span class="practice-goal-label">Starts ${formatDate(weekStartKey)}</span>`;
 
@@ -1147,9 +1188,12 @@ function renderPractice(child) {
         <div class="practice-entry ${e.done ? 'done' : ''}">
           <input type="checkbox" ${e.done ? 'checked' : ''} onchange="togglePracticeEntry('${e.id}')">
           <span class="inst">${escapeHtml(e.instrument)}${e.auto ? '<span class="auto-tag">Weekly goal</span>' : ''}</span>
-          <span class="mins">${e.minutes} min</span>
-          <input type="date" class="entry-date" value="${e.date || ''}" onchange="updateEntryDate('${e.id}', this.value)">
-          <button class="del" onclick="deletePracticeEntry('${e.id}')">Remove</button>
+          <span class="mins">${e.auto ? 'Goal ' : ''}${e.minutes}m</span>
+          <input type="number" class="actual-input" min="0" placeholder="Actual" title="Actual minutes practiced" value="${e.actualMinutes ?? ''}" onchange="updateActualMinutes('${e.id}', this.value)">
+          ${canEdit
+            ? `<input type="date" class="entry-date" value="${e.date || ''}" onchange="updateEntryDate('${e.id}', this.value)">`
+            : `<span class="pdate">${formatDate(e.date)}</span>`}
+          ${canEdit ? `<button class="del" onclick="deletePracticeEntry('${e.id}')">Remove</button>` : ''}
         </div>
       `).join('') || '<div style="color:var(--ink-soft); font-size:13.5px; padding:6px 0;">No practice logged yet.</div>'}
       <div class="practice-add-row" id="practice-add-row">
@@ -1184,7 +1228,7 @@ function renderSubject(subject) {
               <span class="title">${escapeHtml(a.title)}</span>
               ${a.dueDate ? `<span class="due ${isOverdue(a.dueDate, a.done) ? 'overdue' : ''}">${isOverdue(a.dueDate, a.done) ? 'Overdue · ' : 'Due '}${formatDate(a.dueDate)}</span>` : ''}
             </div>
-            <button class="del" onclick="deleteAssignment('${subject.id}','${a.id}')">Remove</button>
+            ${canManageChild(activeChild()) ? `<button class="del" onclick="deleteAssignment('${subject.id}','${a.id}')">Remove</button>` : ''}
           </div>
         `).join('') || '<div style="color:var(--ink-soft); font-size:13.5px; padding:6px 0;">No assignments yet.</div>'}
         <div class="add-row" id="addrow-${subject.id}">
