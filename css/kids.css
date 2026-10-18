@@ -1,0 +1,90 @@
+/* Child tabs, styled like folder tabs along a shelf */
+.kids-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.kid-finder-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.kid-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  font-family: inherit;
+  background: var(--panel);
+}
+.kid-jump {
+  flex: 0 0 auto;
+  max-width: 44%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  font-family: inherit;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.kid-tab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.kid-tab.active {
+  border-color: var(--kid-color, var(--ink));
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--kid-color, var(--ink));
+}
+
+.kid-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--kid-color, var(--ink-soft));
+  flex-shrink: 0;
+}
+
+.kid-del {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0 0 2px;
+}
+.kid-del:hover { color: var(--coral); }
+
+.kid-ring-num {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.add-kid-tab {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 14px;
+  cursor: pointer;
+}
