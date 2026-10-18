@@ -1,0 +1,41 @@
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(34,48,63,0.35);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  z-index: 10;
+}
+.modal {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 20px;
+  width: 100%;
+  max-width: 340px;
+}
+.modal h3 { margin: 0 0 12px; font-size: 16px; }
+.modal input[type="text"] {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 14px;
+  font-family: inherit;
+  margin-bottom: 10px;
+}
+.swatches { display: flex; gap: 8px; margin-bottom: 14px; }
+.swatch {
+  width: 26px; height: 26px; border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.swatch.selected { border-color: var(--ink); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-actions button {
+  padding: 8px 14px;
+  border-radius: 7px;
+  font-size: 13.5px;
+  border: none;
+  cursor: pointer;
+}
+.btn-cancel { background: var(--paper); color: var(--ink-soft); }
+.btn-save { background: var(--ink); color: white; }
