@@ -1,0 +1,31 @@
+.tutorial-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.tutorial-modal { max-width: 400px; }
+.tutorial-count {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+.tutorial-body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0 0 14px;
+}
+.tutorial-dots { display: flex; gap: 6px; margin-bottom: 16px; }
+.tutorial-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--line);
+}
+.tutorial-dot.active { background: var(--ink); }

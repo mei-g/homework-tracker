@@ -10,14 +10,19 @@ function render() {
     return;
   }
 
+  maybeShowTutorial();
+
   const child = activeChild();
 
-  const accountHtml = USE_FIREBASE ? `
+  const accountHtml = `
     <div class="header-meta">
-      <span class="role-badge ${currentRole === 'admin' ? 'admin' : ''}">${currentRole}</span>
-      <button class="signout-btn" onclick="signOutUser()">Sign out</button>
+      <button class="tutorial-btn" onclick="openTutorial()">Tutorial</button>
+      ${USE_FIREBASE ? `
+        <span class="role-badge ${currentRole === 'admin' ? 'admin' : ''}">${currentRole}</span>
+        <button class="signout-btn" onclick="signOutUser()">Sign out</button>
+      ` : ''}
     </div>
-  ` : '';
+  `;
 
   let html = `
     <header class="top">
