@@ -16,7 +16,7 @@ function render() {
 
   const accountHtml = `
     <div class="header-meta">
-      <button class="tutorial-btn" onclick="openTutorial()">Tutorial</button>
+      <button class="tutorial-btn" onclick="openTutorial()">? Tutorial</button>
       ${USE_FIREBASE ? `
         <span class="role-badge ${currentRole === 'admin' ? 'admin' : ''}">${currentRole}</span>
         <button class="signout-btn" onclick="signOutUser()">Sign out</button>
