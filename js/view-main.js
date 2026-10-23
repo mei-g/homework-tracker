@@ -6,10 +6,12 @@ function render() {
   const app = document.getElementById('app');
 
   if (USE_FIREBASE && !currentUser) {
+    tour = null;
     app.innerHTML = renderAuthScreen();
     return;
   }
 
+  advanceTourIfDone();
   maybeShowTutorial();
 
   const child = activeChild();
@@ -90,7 +92,8 @@ function render() {
 
   if (modal) html += renderModal();
 
-  app.innerHTML = html;
+  app.innerHTML = html + renderTour();
+  applyTourHighlight();
 
   // wire up date min for new inputs not needed; wire enter key handlers
   document.querySelectorAll('.add-row input[type=text]').forEach(inp => {
