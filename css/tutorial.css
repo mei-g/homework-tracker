@@ -15,8 +15,28 @@
   box-shadow: 0 3px 8px rgba(34, 48, 63, 0.35);
 }
 
-.tutorial-modal { max-width: 400px; }
-.tutorial-count {
+/* Interactive tour: instruction card + pulsing outline on the real control */
+.tour-card {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 420px;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 30px rgba(34, 48, 63, 0.35);
+  z-index: 5; /* below modals (10) so Add child / Add subject stay usable */
+}
+.tour-card.centered {
+  bottom: auto;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.tour-card h3 { margin: 0 0 6px; font-size: 16px; }
+.tour-count {
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -24,15 +44,25 @@
   color: var(--ink-soft);
   margin-bottom: 4px;
 }
-.tutorial-body {
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--ink);
-  margin: 0 0 14px;
+.tour-body { font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+.tour-actions { display: flex; align-items: center; gap: 8px; }
+.tour-spacer { flex: 1; }
+.tour-actions button {
+  padding: 7px 13px;
+  border-radius: 7px;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
 }
-.tutorial-dots { display: flex; gap: 6px; margin-bottom: 16px; }
-.tutorial-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--line);
+.tour-skip { background: none; color: var(--ink-soft); padding-left: 0 !important; text-decoration: underline; }
+
+.tour-highlight {
+  outline: 3px solid var(--amber);
+  outline-offset: 3px;
+  border-radius: 6px;
+  animation: tourPulse 1.4s ease-in-out infinite;
 }
-.tutorial-dot.active { background: var(--ink); }
+@keyframes tourPulse {
+  0%, 100% { outline-color: var(--amber); outline-offset: 3px; }
+  50% { outline-color: rgba(227, 160, 8, 0.35); outline-offset: 6px; }
+}

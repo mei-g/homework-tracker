@@ -1,5 +1,4 @@
 function renderModal() {
-  if (modal.type === 'tutorial') return renderTutorialModal();
   if (modal.type === 'deleteChild') {
     return `
       <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
